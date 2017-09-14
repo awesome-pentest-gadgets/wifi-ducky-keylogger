@@ -1,5 +1,6 @@
 # Wi-Fi Ducky
-Upload, save and run keystroke injections remotely with an ESP8266 + ATmega32u4
+Keystroke injection and Keylogger with an ESP8266 + Arduino Pro Micro + USB Host Shield
+
 WARNING BASIC WORK IN PROGRESS. DO NOT USE!
 
 ![image of my DIY Wi-Fi Duck](https://raw.githubusercontent.com/spacehuhn/wifi_ducky/master/images/my_wifi_duck.jpg)
